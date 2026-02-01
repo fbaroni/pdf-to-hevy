@@ -7,7 +7,10 @@
         "httpMethod": "POST",
         "path": "upload-workout-pdf",
         "responseMode": "responseNode",
-        "options": { "allowedOrigins": "*" }
+        "options": { 
+          "allowedOrigins": "*",
+          "rawBody": false
+        }
       },
       "id": "webhook-node",
       "name": "Webhook - Upload PDF",
@@ -18,13 +21,55 @@
     },
     {
       "parameters": {
-        "jsCode": "const item = $input.first();\nconst data = item.json.body || item.json;\nconst mockText = data.mockText;\n\nif (!mockText) {\n  throw new Error('No mockText provided. Received: ' + JSON.stringify(data));\n}\n\nconst lines = mockText.split('\\n').filter(l => l.trim());\nlet workoutName = 'Imported Workout';\nconst exercises = [];\n\nfor (const line of lines) {\n  // Try to parse exercise line: \"1. Bench Press - 4x10 @ 60kg\" or \"Bench Press - 3x12 @ 40kg\"\n  const exerciseMatch = line.match(/^\\d*\\.?\\s*(.+?)\\s*-\\s*(\\d+)x(\\d+)\\s*@\\s*([\\d.]+)\\s*kg/i);\n  if (exerciseMatch) {\n    const [, name, sets, reps, weight] = exerciseMatch;\n    const setsArray = [];\n    for (let i = 0; i < parseInt(sets); i++) {\n      setsArray.push({\n        type: 'normal',\n        weight_kg: parseFloat(weight),\n        reps: parseInt(reps),\n        distance_meters: null,\n        duration_seconds: null\n      });\n    }\n    exercises.push({\n      exercise_template_id: 'D04AC939',\n      superset_id: null,\n      rest_seconds: 90,\n      notes: name.trim(),\n      sets: setsArray\n    });\n  } else if (!line.match(/^\\d+\\./) && !exercises.length) {\n    // First non-exercise line is the workout name\n    workoutName = line.trim();\n  }\n}\n\n// If no exercises found, create a default one\nif (exercises.length === 0) {\n  exercises.push({\n    exercise_template_id: 'D04AC939',\n    superset_id: null,\n    rest_seconds: 90,\n    notes: 'Default exercise',\n    sets: [{ type: 'normal', weight_kg: 20, reps: 10, distance_meters: null, duration_seconds: null }]\n  });\n}\n\nreturn [{\n  json: {\n    routine: {\n      title: workoutName,\n      folder_id: null,\n      exercises: exercises\n    }\n  }\n}];"
+        "operation": "text",
+        "options": {}
+      },
+      "id": "extract-pdf",
+      "name": "Extract PDF Text",
+      "type": "n8n-nodes-base.extractFromFile",
+      "typeVersion": 1,
+      "position": [450, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "const item = $input.first();\n\n// Check if we have extracted PDF text or mockText fallback\nlet text = '';\nif (item.json.data) {\n  // From Extract from File node\n  text = item.json.data;\n} else if (item.json.body?.mockText || item.json.mockText) {\n  // Fallback to mockText for testing\n  text = item.json.body?.mockText || item.json.mockText;\n} else {\n  throw new Error('No PDF text or mockText provided. Received: ' + JSON.stringify(item.json));\n}\n\nconst lines = text.split('\\n').filter(l => l.trim());\nlet workoutName = 'Imported Workout';\nconst exercises = [];\n\nfor (const line of lines) {\n  // Try to parse exercise line: \"1. Bench Press - 4x10 @ 60kg\" or \"Bench Press - 3x12 @ 40kg\"\n  const exerciseMatch = line.match(/^\\d*\\.?\\s*(.+?)\\s*-\\s*(\\d+)x(\\d+)\\s*@\\s*([\\d.]+)\\s*kg/i);\n  if (exerciseMatch) {\n    const [, name, sets, reps, weight] = exerciseMatch;\n    const setsArray = [];\n    for (let i = 0; i < parseInt(sets); i++) {\n      setsArray.push({\n        type: 'normal',\n        weight_kg: parseFloat(weight),\n        reps: parseInt(reps),\n        distance_meters: null,\n        duration_seconds: null\n      });\n    }\n    exercises.push({\n      exercise_template_id: 'D04AC939',\n      superset_id: null,\n      rest_seconds: 90,\n      notes: name.trim(),\n      sets: setsArray\n    });\n  } else if (!line.match(/^\\d+\\./) && !exercises.length) {\n    // First non-exercise line is the workout name\n    workoutName = line.trim();\n  }\n}\n\n// If no exercises found, create a default one\nif (exercises.length === 0) {\n  exercises.push({\n    exercise_template_id: 'D04AC939',\n    superset_id: null,\n    rest_seconds: 90,\n    notes: 'Default exercise',\n    sets: [{ type: 'normal', weight_kg: 20, reps: 10, distance_meters: null, duration_seconds: null }]\n  });\n}\n\nreturn [{\n  json: {\n    routine: {\n      title: workoutName,\n      folder_id: null,\n      exercises: exercises\n    }\n  }\n}];"
       },
       "id": "prepare-payload",
       "name": "Prepare Payload",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [450, 300]
+      "position": [650, 300]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": { "caseSensitive": true, "typeValidation": "loose" },
+          "combinator": "and",
+          "conditions": [
+            {
+              "id": "check-binary",
+              "leftValue": "={{ $binary ? 'yes' : 'no' }}",
+              "rightValue": "yes",
+              "operator": { "type": "string", "operation": "equals" }
+            }
+          ]
+        }
+      },
+      "id": "check-pdf",
+      "name": "Has PDF?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [350, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Pass through mockText for testing without PDF\nconst item = $input.first();\nreturn [{ json: item.json }];"
+      },
+      "id": "pass-mock",
+      "name": "Pass Mock Text",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [450, 450]
     },
     {
       "parameters": {
@@ -68,7 +113,15 @@
     }
   ],
   "connections": {
-    "Webhook - Upload PDF": { "main": [[{ "node": "Prepare Payload", "type": "main", "index": 0 }]] },
+    "Webhook - Upload PDF": { "main": [[{ "node": "Has PDF?", "type": "main", "index": 0 }]] },
+    "Has PDF?": { 
+      "main": [
+        [{ "node": "Extract PDF Text", "type": "main", "index": 0 }],
+        [{ "node": "Pass Mock Text", "type": "main", "index": 0 }]
+      ] 
+    },
+    "Extract PDF Text": { "main": [[{ "node": "Prepare Payload", "type": "main", "index": 0 }]] },
+    "Pass Mock Text": { "main": [[{ "node": "Prepare Payload", "type": "main", "index": 0 }]] },
     "Prepare Payload": { "main": [[{ "node": "Hevy API", "type": "main", "index": 0 }]] },
     "Hevy API": { "main": [[{ "node": "Response", "type": "main", "index": 0 }]] }
   },
