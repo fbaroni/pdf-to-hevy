@@ -1,5 +1,10 @@
 # PDF to Hevy Workout Converter
 
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![Docker](https://img.shields.io/badge/Docker-Ready-blue.svg)](https://www.docker.com/)
+[![n8n](https://img.shields.io/badge/n8n-Workflow-orange.svg)](https://n8n.io/)
+[![AI Assisted](https://img.shields.io/badge/Development-AI_Assisted-purple.svg)](https://github.com/fbaroni/pdf-to-hevy/blob/main/LICENSE#ai-assistance-acknowledgment)
+
 A spec-driven MVP that converts workout PDFs into Hevy routines using the Hevy API, built with Docker and n8n.
 
 ## 🎯 Overview
@@ -321,9 +326,11 @@ After making changes in n8n UI:
 4. Test thoroughly
 5. Submit a pull request
 
+> **Note**: This project was developed with AI assistance. See [LICENSE](LICENSE#ai-assistance-acknowledgment) for details about AI contributions.
+
 ## 📄 License
 
-MIT License - feel free to use and modify as needed.
+MIT License - feel free to use and modify as needed. This project includes significant AI assistance in development. See [LICENSE](LICENSE) for full details.
 
 ## 🙏 Acknowledgments
 

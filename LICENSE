@@ -1,6 +1,6 @@
 MIT License
 
-Copyright (c) 2024 PDF to Hevy Contributors
+Copyright (c) 2026 Federico Baroni
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal
@@ -19,3 +19,22 @@ AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
 LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
+
+---
+
+## AI Assistance Acknowledgment
+
+This project was developed with significant assistance from AI tools, including:
+- Code generation and architecture design
+- Documentation and examples creation
+- Testing and debugging support
+- Security best practices implementation
+
+The AI-assisted development approach enabled rapid prototyping while maintaining
+code quality and security standards. All AI-generated content has been reviewed,
+tested, and validated by human developers.
+
+## Contributing
+
+While this project leverages AI assistance, we welcome human contributions!
+Please see CONTRIBUTING.md for guidelines on how to contribute to this project.
