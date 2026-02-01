@@ -1,1 +1,328 @@
-# pdf-to-hevy
+# PDF to Hevy Workout Converter
+
+A spec-driven MVP that converts workout PDFs into Hevy routines using the Hevy API, built with Docker and n8n.
+
+## 🎯 Overview
+
+This project provides an automated workflow to extract workout information from PDF files and create structured workout routines in the Hevy fitness tracking app. The solution uses n8n for workflow automation, making it easy to extend and customize.
+
+## 🏗️ Architecture
+
+```
+PDF Upload (Webhook)
+    ↓
+PDF Text Extraction
+    ↓
+Workout Parser
+    ↓
+Exercise Mapper
+    ↓
+Hevy Payload Preparation
+    ↓
+Hevy API Call
+    ↓
+Success/Error Response
+```
+
+### Components
+
+1. **Webhook Node**: Receives PDF uploads via HTTP POST
+2. **PDF Text Extractor**: Extracts text content from PDF files
+3. **Workout Parser**: Parses text into structured workout data
+4. **Exercise Mapper**: Maps exercise names to Hevy exercise IDs
+5. **Hevy Payload Preparation**: Formats data for Hevy API
+6. **Hevy API Caller**: Creates routine via Hevy API
+7. **Error Handler**: Handles errors gracefully with detailed responses
+
+## 📋 Prerequisites
+
+- Docker and Docker Compose
+- Hevy API key (obtain from [Hevy API documentation](https://hevyapp.com))
+- Basic understanding of n8n workflows
+
+## 🚀 Quick Start
+
+### 1. Clone the Repository
+
+```bash
+git clone https://github.com/fbaroni/pdf-to-hevy.git
+cd pdf-to-hevy
+```
+
+### 2. Configure Environment Variables
+
+```bash
+cp .env.example .env
+```
+
+Edit `.env` and set your configuration:
+
+```env
+# Required: Your Hevy API key
+HEVY_API_KEY=your_actual_hevy_api_key
+
+# Optional: n8n configuration
+N8N_PORT=5678
+N8N_BASIC_AUTH_USER=admin
+N8N_BASIC_AUTH_PASSWORD=your_secure_password
+```
+
+### 3. Start the Services
+
+```bash
+docker-compose up -d
+```
+
+This will start n8n on `http://localhost:5678`
+
+### 4. Import the Workflow
+
+1. Open n8n in your browser: `http://localhost:5678`
+2. Log in with the credentials from `.env` (default: admin/change_this_password)
+3. Click on "Workflows" → "Import from File"
+4. Select `workflows/pdf-to-hevy-workflow.json`
+5. Activate the workflow
+
+### 5. Test the Workflow
+
+The webhook endpoint will be available at:
+```
+http://localhost:5678/webhook/upload-workout-pdf
+```
+
+Test with curl:
+```bash
+curl -X POST http://localhost:5678/webhook/upload-workout-pdf \
+  -H "Content-Type: application/json" \
+  -d '{
+    "fileName": "test-workout.pdf",
+    "mockText": "Workout: Test Routine\nDate: 2024-01-15\n\nExercise: Bench Press\nSets: 3\nReps: 10, 10, 10\nWeight: 135, 135, 135"
+  }'
+```
+
+## 📁 Project Structure
+
+```
+pdf-to-hevy/
+├── docker-compose.yml          # Docker services configuration
+├── .env.example                # Environment variables template
+├── .gitignore                  # Git ignore rules
+├── README.md                   # This file
+├── workflows/                  # n8n workflow definitions
+│   └── pdf-to-hevy-workflow.json
+└── src/                        # Helper JavaScript modules
+    ├── pdfExtractor.js         # PDF text extraction logic
+    ├── workoutParser.js        # Workout parsing logic
+    ├── exerciseMapper.js       # Exercise name mapping
+    └── hevyApiClient.js        # Hevy API client utilities
+```
+
+## 🔧 Workflow Details
+
+### Input Format
+
+The workflow expects a POST request with either:
+
+1. **JSON with mock text** (for testing):
+```json
+{
+  "fileName": "workout.pdf",
+  "mockText": "Workout: ...\nExercise: ..."
+}
+```
+
+2. **Multipart form data with PDF file** (production):
+```
+Content-Type: multipart/form-data
+Field: pdfFile (binary)
+```
+
+### Expected PDF Format
+
+The PDF should contain workout information in this structure:
+
+```
+Workout: [Workout Name]
+Date: [YYYY-MM-DD]
+
+Exercise: [Exercise Name]
+Sets: [Number]
+Reps: [rep1, rep2, rep3, ...]
+Weight: [weight1, weight2, weight3, ...]
+
+Exercise: [Next Exercise Name]
+...
+```
+
+### Output Format
+
+**Success Response** (200):
+```json
+{
+  "status": "success",
+  "message": "Workout routine created successfully",
+  "routine_name": "Full Body Strength",
+  "exercises_count": 3
+}
+```
+
+**Error Response** (400):
+```json
+{
+  "status": "error",
+  "message": "Failed to process workout PDF",
+  "error": "Error details",
+  "stage": "pdf-extraction"
+}
+```
+
+## 🎨 Customization
+
+### Adding New Exercises
+
+Edit `src/exerciseMapper.js` to add exercise mappings:
+
+```javascript
+const EXERCISE_MAP = {
+  'your exercise name': { 
+    id: 'hevy_exercise_id', 
+    title: 'Display Name' 
+  },
+  // ... more exercises
+};
+```
+
+### Modifying Parsing Logic
+
+Update `src/workoutParser.js` to handle different PDF formats:
+
+```javascript
+function parseExerciseBlock(block) {
+  // Customize parsing logic here
+}
+```
+
+### Extending the Workflow
+
+1. Open n8n UI
+2. Edit the workflow
+3. Add new nodes or modify existing ones
+4. Export and save to `workflows/` directory
+
+## 🔒 Security Best Practices
+
+1. **Never commit `.env` file** - it contains sensitive credentials
+2. **Use strong passwords** for n8n basic auth
+3. **Secure your Hevy API key** - rotate regularly
+4. **Enable HTTPS** in production environments
+5. **Limit webhook access** - use authentication or IP whitelisting
+
+## 🐛 Troubleshooting
+
+### Workflow Not Activating
+
+- Check that all environment variables are set correctly
+- Verify the Hevy API key is valid
+- Check n8n logs: `docker-compose logs n8n`
+
+### PDF Extraction Failing
+
+- Ensure PDF is text-based (not scanned images)
+- Check PDF format matches expected structure
+- Review extraction logs in the workflow execution
+
+### Hevy API Errors
+
+- Verify API key is correct
+- Check Hevy API status and rate limits
+- Review API response in n8n execution logs
+
+### Permission Errors
+
+```bash
+# Fix volume permissions
+sudo chown -R 1000:1000 n8n-data/
+```
+
+## 📊 Monitoring
+
+View workflow executions in n8n:
+1. Navigate to "Executions" in n8n UI
+2. Check execution history
+3. Debug failed runs with detailed logs
+
+## 🔄 Updating
+
+To update the workflow:
+
+```bash
+# Pull latest changes
+git pull
+
+# Restart services
+docker-compose down
+docker-compose up -d
+
+# Re-import workflow if needed
+```
+
+## 📝 Development
+
+### Local Testing
+
+```bash
+# View logs
+docker-compose logs -f n8n
+
+# Restart n8n
+docker-compose restart n8n
+
+# Stop all services
+docker-compose down
+```
+
+### Workflow Export
+
+After making changes in n8n UI:
+1. Click "..." menu on workflow
+2. Select "Export"
+3. Save to `workflows/pdf-to-hevy-workflow.json`
+
+## 🤝 Contributing
+
+1. Fork the repository
+2. Create a feature branch
+3. Make your changes
+4. Test thoroughly
+5. Submit a pull request
+
+## 📄 License
+
+MIT License - feel free to use and modify as needed.
+
+## 🙏 Acknowledgments
+
+- [n8n](https://n8n.io/) - Workflow automation platform
+- [Hevy](https://hevyapp.com/) - Fitness tracking app
+- Built with clarity, modularity, and extensibility in mind
+
+## 📞 Support
+
+For issues or questions:
+- Open a GitHub issue
+- Check n8n documentation: https://docs.n8n.io/
+- Review Hevy API documentation
+
+## 🔮 Future Enhancements
+
+- [ ] Support for scanned PDF images (OCR)
+- [ ] Multiple PDF format parsers
+- [ ] Bulk upload support
+- [ ] Exercise auto-detection using AI
+- [ ] Progress tracking dashboard
+- [ ] Mobile app integration
+- [ ] Scheduled imports from cloud storage
+
+---
+
+**Happy lifting! 💪**
