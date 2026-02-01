@@ -50,8 +50,7 @@
     {
       "parameters": {
         "url": "https://api.hevyapp.com/v1/routines",
-        "authentication": "genericCredentialType",
-        "genericAuthType": "httpHeaderAuth",
+        "authentication": "none",
         "sendHeaders": true,
         "headerParameters": {
           "parameters": [
@@ -80,7 +79,7 @@
     },
     {
       "parameters": {
-        "functionCode": "// Prepare Hevy API request payload\n\nconst items = $input.all();\nconst results = [];\n\nfor (const item of items) {\n  try {\n    if (!item.json.success || !item.json.mappedWorkout) {\n      results.push(item);\n      continue;\n    }\n\n    const workout = item.json.mappedWorkout;\n    \n    // Build Hevy routine format\n    const heavyPayload = {\n      title: workout.routine_name,\n      exercises: workout.exercises.map((exercise, index) => ({\n        index: index,\n        exercise_template_id: exercise.hevy_exercise_id,\n        title: exercise.hevy_exercise_title,\n        notes: exercise.notes || '',\n        sets: exercise.sets.map(set => ({\n          type: 'normal',\n          weight_kg: set.weight_kg,\n          reps: set.reps,\n          distance_meters: null,\n          duration_seconds: null,\n          rpe: null\n        }))\n      }))\n    };\n\n    results.push({\n      json: heavyPayload\n    });\n  } catch (error) {\n    results.push({\n      json: {\n        error: error.message,\n        success: false,\n        stage: 'hevy-payload-preparation'\n      }\n    });\n  }\n}\n\nreturn results;"
+        "functionCode": "// Prepare Hevy API request payload\n\nconst items = $input.all();\nconst results = [];\n\nfor (const item of items) {\n  try {\n    if (!item.json.success || !item.json.mappedWorkout) {\n      results.push(item);\n      continue;\n    }\n\n    const workout = item.json.mappedWorkout;\n    \n    // Build Hevy routine format (POST /v1/routines)\n    const heavyPayload = {\n      routine: {\n        title: workout.routine_name,\n        folder_id: null,\n        notes: workout.notes || '',\n        exercises: workout.exercises\n          .filter(exercise => exercise.hevy_exercise_id)\n          .map(exercise => ({\n            exercise_template_id: exercise.hevy_exercise_id,\n            superset_id: null,\n            rest_seconds: null,\n            notes: exercise.notes || '',\n            sets: exercise.sets.map(set => ({\n              type: 'normal',\n              weight_kg: set.weight_kg,\n              reps: set.reps,\n              distance_meters: null,\n              duration_seconds: null,\n              custom_metric: null\n            }))\n          }))\n      }\n    };\n\n    results.push({\n      json: heavyPayload\n    });\n  } catch (error) {\n    results.push({\n      json: {\n        error: error.message,\n        success: false,\n        stage: 'hevy-payload-preparation'\n      }\n    });\n  }\n}\n\nreturn results;"
       },
       "id": "hevy-payload-prep",
       "name": "Prepare Hevy Payload",
