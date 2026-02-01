@@ -1,4 +1,5 @@
 {
+  "active": true,
   "name": "PDF to Hevy Workout Converter",
   "nodes": [
     {
@@ -6,9 +7,7 @@
         "httpMethod": "POST",
         "path": "upload-workout-pdf",
         "responseMode": "responseNode",
-        "options": {
-          "allowedOrigins": "*"
-        }
+        "options": { "allowedOrigins": "*" }
       },
       "id": "webhook-node",
       "name": "Webhook - Upload PDF",
@@ -19,234 +18,62 @@
     },
     {
       "parameters": {
-        "functionCode": "// Extract PDF text from uploaded file\n// Expected input: base64 PDF or multipart form data\n\nconst items = $input.all();\nconst results = [];\n\nfor (const item of items) {\n  try {\n    // Get PDF data from request body\n    const pdfData = item.binary?.data || item.json.pdfData;\n    \n    if (!pdfData) {\n      throw new Error('No PDF data found in request');\n    }\n\n    // In a real implementation, you would use a library like pdf-parse\n    // For this MVP, we'll simulate text extraction\n    // The binary data would be processed here\n    \n    // Simulated extraction result\n    const extractedText = item.json.mockText || `\nWorkout: Full Body Strength\nDate: 2024-01-15\n\nExercise: Bench Press\nSets: 3\nReps: 8, 8, 8\nWeight: 135, 135, 140\n\nExercise: Squats\nSets: 4\nReps: 10, 10, 10, 8\nWeight: 185, 185, 185, 205\n\nExercise: Deadlifts\nSets: 3\nReps: 5, 5, 5\nWeight: 225, 225, 245\n    `;\n\n    results.push({\n      json: {\n        pdfFileName: item.json.fileName || 'workout.pdf',\n        extractedText: extractedText,\n        extractedAt: new Date().toISOString(),\n        success: true\n      }\n    });\n  } catch (error) {\n    results.push({\n      json: {\n        error: error.message,\n        success: false,\n        stage: 'pdf-extraction'\n      }\n    });\n  }\n}\n\nreturn results;"
+        "jsCode": "const item = $input.first();\nconst data = item.json.body || item.json;\nconst mockText = data.mockText;\n\nif (!mockText) {\n  throw new Error('No mockText provided. Received: ' + JSON.stringify(data));\n}\n\nconst lines = mockText.split('\\n').filter(l => l.trim());\nlet workoutName = 'Imported Workout';\nconst exercises = [];\n\nfor (const line of lines) {\n  // Try to parse exercise line: \"1. Bench Press - 4x10 @ 60kg\" or \"Bench Press - 3x12 @ 40kg\"\n  const exerciseMatch = line.match(/^\\d*\\.?\\s*(.+?)\\s*-\\s*(\\d+)x(\\d+)\\s*@\\s*([\\d.]+)\\s*kg/i);\n  if (exerciseMatch) {\n    const [, name, sets, reps, weight] = exerciseMatch;\n    const setsArray = [];\n    for (let i = 0; i < parseInt(sets); i++) {\n      setsArray.push({\n        type: 'normal',\n        weight_kg: parseFloat(weight),\n        reps: parseInt(reps),\n        distance_meters: null,\n        duration_seconds: null\n      });\n    }\n    exercises.push({\n      exercise_template_id: 'D04AC939',\n      superset_id: null,\n      rest_seconds: 90,\n      notes: name.trim(),\n      sets: setsArray\n    });\n  } else if (!line.match(/^\\d+\\./) && !exercises.length) {\n    // First non-exercise line is the workout name\n    workoutName = line.trim();\n  }\n}\n\n// If no exercises found, create a default one\nif (exercises.length === 0) {\n  exercises.push({\n    exercise_template_id: 'D04AC939',\n    superset_id: null,\n    rest_seconds: 90,\n    notes: 'Default exercise',\n    sets: [{ type: 'normal', weight_kg: 20, reps: 10, distance_meters: null, duration_seconds: null }]\n  });\n}\n\nreturn [{\n  json: {\n    routine: {\n      title: workoutName,\n      folder_id: null,\n      exercises: exercises\n    }\n  }\n}];"
       },
-      "id": "pdf-extractor",
-      "name": "PDF Text Extractor",
-      "type": "n8n-nodes-base.function",
-      "typeVersion": 1,
+      "id": "prepare-payload",
+      "name": "Prepare Payload",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
       "position": [450, 300]
     },
     {
       "parameters": {
-        "functionCode": "// Parse extracted text into structured workout data\n\nconst items = $input.all();\nconst results = [];\n\nfor (const item of items) {\n  try {\n    if (!item.json.success) {\n      results.push(item);\n      continue;\n    }\n\n    const text = item.json.extractedText;\n    \n    // Parse workout metadata\n    const workoutNameMatch = text.match(/Workout:\\s*(.+)/i);\n    const dateMatch = text.match(/Date:\\s*(.+)/i);\n    \n    const workoutName = workoutNameMatch ? workoutNameMatch[1].trim() : 'Imported Workout';\n    const workoutDate = dateMatch ? dateMatch[1].trim() : new Date().toISOString().split('T')[0];\n\n    // Parse exercises\n    const exercises = [];\n    const exerciseBlocks = text.split(/\\n\\s*Exercise:/i).slice(1);\n    \n    for (const block of exerciseBlocks) {\n      const lines = block.trim().split('\\n');\n      const exerciseName = lines[0].trim();\n      \n      let sets = [];\n      let reps = [];\n      let weights = [];\n      \n      // Parse sets, reps, and weights\n      for (const line of lines.slice(1)) {\n        if (line.match(/Sets:/i)) {\n          const match = line.match(/Sets:\\s*(\\d+)/i);\n          const setCount = match ? parseInt(match[1]) : 0;\n          sets = Array(setCount).fill(0).map((_, i) => i + 1);\n        } else if (line.match(/Reps:/i)) {\n          const match = line.match(/Reps:\\s*(.+)/i);\n          if (match) {\n            reps = match[1].split(',').map(r => parseInt(r.trim()));\n          }\n        } else if (line.match(/Weight:/i)) {\n          const match = line.match(/Weight:\\s*(.+)/i);\n          if (match) {\n            weights = match[1].split(',').map(w => parseFloat(w.trim()));\n          }\n        }\n      }\n\n      // Build sets array\n      const setsData = sets.map((setNum, idx) => ({\n        set_index: setNum,\n        reps: reps[idx] || 0,\n        weight_kg: weights[idx] || 0\n      }));\n\n      exercises.push({\n        exercise_name: exerciseName,\n        sets: setsData,\n        notes: ''\n      });\n    }\n\n    results.push({\n      json: {\n        ...item.json,\n        parsedWorkout: {\n          routine_name: workoutName,\n          workout_date: workoutDate,\n          exercises: exercises\n        },\n        success: true\n      }\n    });\n  } catch (error) {\n    results.push({\n      json: {\n        ...item.json,\n        error: error.message,\n        success: false,\n        stage: 'workout-parsing'\n      }\n    });\n  }\n}\n\nreturn results;"
-      },
-      "id": "workout-parser",
-      "name": "Workout Parser",
-      "type": "n8n-nodes-base.function",
-      "typeVersion": 1,
-      "position": [650, 300]
-    },
-    {
-      "parameters": {
-        "functionCode": "// Map parsed exercises to Hevy exercise IDs\n// This is a simplified mapping - in production, you'd query the Hevy API\n// for available exercises and match by name similarity\n\nconst items = $input.all();\nconst results = [];\n\n// Exercise mapping database (simplified)\nconst exerciseMap = {\n  'bench press': { id: 'bench_press', title: 'Bench Press (Barbell)' },\n  'squats': { id: 'squats', title: 'Squat (Barbell)' },\n  'squat': { id: 'squats', title: 'Squat (Barbell)' },\n  'deadlifts': { id: 'deadlift', title: 'Deadlift (Barbell)' },\n  'deadlift': { id: 'deadlift', title: 'Deadlift (Barbell)' },\n  'shoulder press': { id: 'shoulder_press', title: 'Shoulder Press (Barbell)' },\n  'bicep curls': { id: 'bicep_curl', title: 'Bicep Curl (Barbell)' },\n  'tricep extension': { id: 'tricep_extension', title: 'Tricep Extension' },\n  'lat pulldown': { id: 'lat_pulldown', title: 'Lat Pulldown' },\n  'rows': { id: 'barbell_row', title: 'Barbell Row' },\n  'pull ups': { id: 'pull_up', title: 'Pull Up' },\n  'push ups': { id: 'push_up', title: 'Push Up' }\n};\n\nfor (const item of items) {\n  try {\n    if (!item.json.success || !item.json.parsedWorkout) {\n      results.push(item);\n      continue;\n    }\n\n    const workout = item.json.parsedWorkout;\n    const mappedExercises = [];\n    const unmappedExercises = [];\n\n    for (const exercise of workout.exercises) {\n      const exerciseKey = exercise.exercise_name.toLowerCase().trim();\n      const mapping = exerciseMap[exerciseKey];\n\n      if (mapping) {\n        mappedExercises.push({\n          ...exercise,\n          hevy_exercise_id: mapping.id,\n          hevy_exercise_title: mapping.title\n        });\n      } else {\n        // Try partial matching\n        let found = false;\n        for (const [key, value] of Object.entries(exerciseMap)) {\n          if (exerciseKey.includes(key) || key.includes(exerciseKey)) {\n            mappedExercises.push({\n              ...exercise,\n              hevy_exercise_id: value.id,\n              hevy_exercise_title: value.title,\n              mapping_confidence: 'partial'\n            });\n            found = true;\n            break;\n          }\n        }\n        \n        if (!found) {\n          unmappedExercises.push(exercise.exercise_name);\n          // Add with original name as fallback\n          mappedExercises.push({\n            ...exercise,\n            hevy_exercise_id: null,\n            hevy_exercise_title: exercise.exercise_name,\n            mapping_confidence: 'unmapped'\n          });\n        }\n      }\n    }\n\n    results.push({\n      json: {\n        ...item.json,\n        mappedWorkout: {\n          ...workout,\n          exercises: mappedExercises\n        },\n        unmappedExercises: unmappedExercises,\n        mappingStats: {\n          total: workout.exercises.length,\n          mapped: mappedExercises.filter(e => e.hevy_exercise_id).length,\n          unmapped: unmappedExercises.length\n        },\n        success: true\n      }\n    });\n  } catch (error) {\n    results.push({\n      json: {\n        ...item.json,\n        error: error.message,\n        success: false,\n        stage: 'exercise-mapping'\n      }\n    });\n  }\n}\n\nreturn results;"
-      },
-      "id": "exercise-mapper",
-      "name": "Exercise Mapper",
-      "type": "n8n-nodes-base.function",
-      "typeVersion": 1,
-      "position": [850, 300]
-    },
-    {
-      "parameters": {
+        "method": "POST",
         "url": "https://api.hevyapp.com/v1/routines",
-        "authentication": "genericCredentialType",
-        "genericAuthType": "httpHeaderAuth",
         "sendHeaders": true,
         "headerParameters": {
           "parameters": [
             {
               "name": "api-key",
-              "value": "={{$env.HEVY_API_KEY}}"
+              "value": "={{ $env.HEVY_API_KEY }}"
             },
             {
-              "name": "Content-Type",
+              "name": "Content-Type", 
               "value": "application/json"
             }
           ]
         },
         "sendBody": true,
-        "bodyParameters": {
-          "parameters": []
-        },
-        "jsonParameters": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json) }}",
         "options": {}
       },
-      "id": "hevy-api-caller",
-      "name": "Hevy API - Create Routine",
+      "id": "hevy-api",
+      "name": "Hevy API",
       "type": "n8n-nodes-base.httpRequest",
-      "typeVersion": 3,
-      "position": [1050, 300]
-    },
-    {
-      "parameters": {
-        "functionCode": "// Prepare Hevy API request payload\n\nconst items = $input.all();\nconst results = [];\n\nfor (const item of items) {\n  try {\n    if (!item.json.success || !item.json.mappedWorkout) {\n      results.push(item);\n      continue;\n    }\n\n    const workout = item.json.mappedWorkout;\n    \n    // Build Hevy routine format\n    const heavyPayload = {\n      title: workout.routine_name,\n      exercises: workout.exercises.map((exercise, index) => ({\n        index: index,\n        exercise_template_id: exercise.hevy_exercise_id,\n        title: exercise.hevy_exercise_title,\n        notes: exercise.notes || '',\n        sets: exercise.sets.map(set => ({\n          type: 'normal',\n          weight_kg: set.weight_kg,\n          reps: set.reps,\n          distance_meters: null,\n          duration_seconds: null,\n          rpe: null\n        }))\n      }))\n    };\n\n    results.push({\n      json: heavyPayload\n    });\n  } catch (error) {\n    results.push({\n      json: {\n        error: error.message,\n        success: false,\n        stage: 'hevy-payload-preparation'\n      }\n    });\n  }\n}\n\nreturn results;"
-      },
-      "id": "hevy-payload-prep",
-      "name": "Prepare Hevy Payload",
-      "type": "n8n-nodes-base.function",
-      "typeVersion": 1,
-      "position": [950, 300]
-    },
-    {
-      "parameters": {
-        "conditions": {
-          "boolean": [
-            {
-              "value1": "={{$json.success}}",
-              "value2": true
-            }
-          ]
-        }
-      },
-      "id": "success-check",
-      "name": "Check Success",
-      "type": "n8n-nodes-base.if",
-      "typeVersion": 1,
-      "position": [1250, 300]
+      "typeVersion": 4.2,
+      "position": [650, 300]
     },
     {
       "parameters": {
         "respondWith": "json",
-        "responseBody": "={{ { \"status\": \"success\", \"message\": \"Workout routine created successfully\", \"routine_name\": $json.title, \"exercises_count\": $json.exercises?.length } }}",
-        "options": {
-          "responseCode": 200
-        }
+        "responseBody": "={{ $json }}",
+        "options": { "responseCode": 200 }
       },
-      "id": "success-response",
-      "name": "Success Response",
+      "id": "response",
+      "name": "Response",
       "type": "n8n-nodes-base.respondToWebhook",
-      "typeVersion": 1,
-      "position": [1450, 200]
-    },
-    {
-      "parameters": {
-        "respondWith": "json",
-        "responseBody": "={{ { \"status\": \"error\", \"message\": \"Failed to process workout PDF\", \"error\": $json.error, \"stage\": $json.stage } }}",
-        "options": {
-          "responseCode": 400
-        }
-      },
-      "id": "error-response",
-      "name": "Error Response",
-      "type": "n8n-nodes-base.respondToWebhook",
-      "typeVersion": 1,
-      "position": [1450, 400]
-    },
-    {
-      "parameters": {
-        "functionCode": "// Global error handler\n// Catches any unhandled errors in the workflow\n\nconst items = $input.all();\nconst results = [];\n\nfor (const item of items) {\n  const errorInfo = {\n    timestamp: new Date().toISOString(),\n    stage: item.json.stage || 'unknown',\n    error: item.json.error || 'Unknown error occurred',\n    originalData: item.json\n  };\n\n  // Log error (in production, send to monitoring service)\n  console.error('Workflow Error:', errorInfo);\n\n  results.push({\n    json: {\n      success: false,\n      ...errorInfo\n    }\n  });\n}\n\nreturn results;"
-      },
-      "id": "error-handler",
-      "name": "Error Handler",
-      "type": "n8n-nodes-base.function",
-      "typeVersion": 1,
-      "position": [1250, 500]
+      "typeVersion": 1.1,
+      "position": [850, 300]
     }
   ],
   "connections": {
-    "Webhook - Upload PDF": {
-      "main": [
-        [
-          {
-            "node": "PDF Text Extractor",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "PDF Text Extractor": {
-      "main": [
-        [
-          {
-            "node": "Workout Parser",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Workout Parser": {
-      "main": [
-        [
-          {
-            "node": "Exercise Mapper",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Exercise Mapper": {
-      "main": [
-        [
-          {
-            "node": "Prepare Hevy Payload",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Prepare Hevy Payload": {
-      "main": [
-        [
-          {
-            "node": "Hevy API - Create Routine",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Hevy API - Create Routine": {
-      "main": [
-        [
-          {
-            "node": "Check Success",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Check Success": {
-      "main": [
-        [
-          {
-            "node": "Success Response",
-            "type": "main",
-            "index": 0
-          }
-        ],
-        [
-          {
-            "node": "Error Handler",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Error Handler": {
-      "main": [
-        [
-          {
-            "node": "Error Response",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    }
+    "Webhook - Upload PDF": { "main": [[{ "node": "Prepare Payload", "type": "main", "index": 0 }]] },
+    "Prepare Payload": { "main": [[{ "node": "Hevy API", "type": "main", "index": 0 }]] },
+    "Hevy API": { "main": [[{ "node": "Response", "type": "main", "index": 0 }]] }
   },
-  "settings": {
-    "executionOrder": "v1"
-  },
+  "settings": { "executionOrder": "v1" },
   "staticData": null,
   "tags": [],
-  "triggerCount": 1,
-  "updatedAt": "2024-01-15T10:00:00.000Z",
-  "versionId": "1"
+  "triggerCount": 1
 }

@@ -94,10 +94,7 @@ Test with curl:
 ```bash
 curl -X POST http://localhost:5678/webhook/upload-workout-pdf \
   -H "Content-Type: application/json" \
-  -d '{
-    "fileName": "test-workout.pdf",
-    "mockText": "Workout: Test Routine\nDate: 2024-01-15\n\nExercise: Bench Press\nSets: 3\nReps: 10, 10, 10\nWeight: 135, 135, 135"
-  }'
+  -d '{"mockText": "Chest Day\n1. Bench Press - 4x10 @ 60kg\n2. Incline Press - 3x12 @ 40kg"}'
 ```
 
 ## 📁 Project Structure
@@ -121,37 +118,28 @@ pdf-to-hevy/
 
 ### Input Format
 
-The workflow expects a POST request with either:
+The workflow accepts a POST request with JSON:
 
-1. **JSON with mock text** (for testing):
 ```json
 {
-  "fileName": "workout.pdf",
-  "mockText": "Workout: ...\nExercise: ..."
+  "mockText": "Workout Name\n1. Exercise Name - SetsxReps @ Weightkg"
 }
 ```
 
-2. **Multipart form data with PDF file** (production):
+**Example:**
+```json
+{
+  "mockText": "Chest Day\n1. Bench Press - 4x10 @ 60kg\n2. Incline Press - 3x12 @ 40kg"
+}
 ```
-Content-Type: multipart/form-data
-Field: pdfFile (binary)
+
+### Supported Text Format
+
+The parser recognizes this format:
 ```
-
-### Expected PDF Format
-
-The PDF should contain workout information in this structure:
-
-```
-Workout: [Workout Name]
-Date: [YYYY-MM-DD]
-
-Exercise: [Exercise Name]
-Sets: [Number]
-Reps: [rep1, rep2, rep3, ...]
-Weight: [weight1, weight2, weight3, ...]
-
-Exercise: [Next Exercise Name]
-...
+Workout Name
+1. Exercise Name - SetsxReps @ Weightkg
+2. Another Exercise - 3x12 @ 40kg
 ```
 
 ### Output Format
@@ -159,12 +147,21 @@ Exercise: [Next Exercise Name]
 **Success Response** (200):
 ```json
 {
-  "status": "success",
-  "message": "Workout routine created successfully",
-  "routine_name": "Full Body Strength",
-  "exercises_count": 3
+  "routine": [{
+    "id": "uuid",
+    "title": "Chest Day",
+    "exercises": [
+      {
+        "title": "Squat (Barbell)",
+        "notes": "Bench Press",
+        "sets": [{"weight_kg": 60, "reps": 10}, ...]
+      }
+    ]
+  }]
 }
 ```
+
+> **Note:** Currently all exercises are mapped to "Squat (Barbell)" with the original exercise name stored in notes. Exercise mapping can be customized in the workflow.
 
 **Error Response** (400):
 ```json
