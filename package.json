@@ -1,0 +1,24 @@
+{
+  "name": "pdf-to-hevy",
+  "version": "1.0.0",
+  "description": "Convert workout PDFs to Hevy routines using n8n",
+  "main": "index.js",
+  "scripts": {
+    "start": "docker-compose up -d",
+    "stop": "docker-compose down",
+    "logs": "docker-compose logs -f n8n",
+    "restart": "docker-compose restart n8n"
+  },
+  "keywords": [
+    "hevy",
+    "workout",
+    "pdf",
+    "n8n",
+    "automation",
+    "fitness"
+  ],
+  "author": "",
+  "license": "MIT",
+  "devDependencies": {},
+  "dependencies": {}
+}

@@ -1,0 +1,79 @@
+{
+  "active": true,
+  "name": "PDF to Hevy Workout Converter",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "upload-workout-pdf",
+        "responseMode": "responseNode",
+        "options": { "allowedOrigins": "*" }
+      },
+      "id": "webhook-node",
+      "name": "Webhook - Upload PDF",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [250, 300],
+      "webhookId": "pdf-upload-webhook"
+    },
+    {
+      "parameters": {
+        "jsCode": "const item = $input.first();\nconst data = item.json.body || item.json;\nconst mockText = data.mockText;\n\nif (!mockText) {\n  throw new Error('No mockText provided. Received: ' + JSON.stringify(data));\n}\n\nconst lines = mockText.split('\\n').filter(l => l.trim());\nlet workoutName = 'Imported Workout';\nconst exercises = [];\n\nfor (const line of lines) {\n  // Try to parse exercise line: \"1. Bench Press - 4x10 @ 60kg\" or \"Bench Press - 3x12 @ 40kg\"\n  const exerciseMatch = line.match(/^\\d*\\.?\\s*(.+?)\\s*-\\s*(\\d+)x(\\d+)\\s*@\\s*([\\d.]+)\\s*kg/i);\n  if (exerciseMatch) {\n    const [, name, sets, reps, weight] = exerciseMatch;\n    const setsArray = [];\n    for (let i = 0; i < parseInt(sets); i++) {\n      setsArray.push({\n        type: 'normal',\n        weight_kg: parseFloat(weight),\n        reps: parseInt(reps),\n        distance_meters: null,\n        duration_seconds: null\n      });\n    }\n    exercises.push({\n      exercise_template_id: 'D04AC939',\n      superset_id: null,\n      rest_seconds: 90,\n      notes: name.trim(),\n      sets: setsArray\n    });\n  } else if (!line.match(/^\\d+\\./) && !exercises.length) {\n    // First non-exercise line is the workout name\n    workoutName = line.trim();\n  }\n}\n\n// If no exercises found, create a default one\nif (exercises.length === 0) {\n  exercises.push({\n    exercise_template_id: 'D04AC939',\n    superset_id: null,\n    rest_seconds: 90,\n    notes: 'Default exercise',\n    sets: [{ type: 'normal', weight_kg: 20, reps: 10, distance_meters: null, duration_seconds: null }]\n  });\n}\n\nreturn [{\n  json: {\n    routine: {\n      title: workoutName,\n      folder_id: null,\n      exercises: exercises\n    }\n  }\n}];"
+      },
+      "id": "prepare-payload",
+      "name": "Prepare Payload",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [450, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.hevyapp.com/v1/routines",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "api-key",
+              "value": "={{ $env.HEVY_API_KEY }}"
+            },
+            {
+              "name": "Content-Type", 
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json) }}",
+        "options": {}
+      },
+      "id": "hevy-api",
+      "name": "Hevy API",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [650, 300]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ $json }}",
+        "options": { "responseCode": 200 }
+      },
+      "id": "response",
+      "name": "Response",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [850, 300]
+    }
+  ],
+  "connections": {
+    "Webhook - Upload PDF": { "main": [[{ "node": "Prepare Payload", "type": "main", "index": 0 }]] },
+    "Prepare Payload": { "main": [[{ "node": "Hevy API", "type": "main", "index": 0 }]] },
+    "Hevy API": { "main": [[{ "node": "Response", "type": "main", "index": 0 }]] }
+  },
+  "settings": { "executionOrder": "v1" },
+  "staticData": null,
+  "tags": [],
+  "triggerCount": 1
+}
