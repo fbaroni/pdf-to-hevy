@@ -97,6 +97,23 @@ curl -X POST http://localhost:5678/webhook/upload-workout-pdf \
   -d '{"mockText": "Chest Day\n1. Bench Press - 4x10 @ 60kg\n2. Incline Press - 3x12 @ 40kg"}'
 ```
 
+Expected response:
+```json
+{
+  "routine": [{
+    "id": "uuid",
+    "title": "Chest Day",
+    "exercises": [
+      {
+        "title": "Squat (Barbell)",
+        "notes": "Bench Press",
+        "sets": [{"weight_kg": 60, "reps": 10}, ...]
+      }
+    ]
+  }]
+}
+```
+
 ## 📁 Project Structure
 
 ```
@@ -209,10 +226,13 @@ function parseExerciseBlock(block) {
 ## 🔒 Security Best Practices
 
 1. **Never commit `.env` file** - it contains sensitive credentials
-2. **Use strong passwords** for n8n basic auth
-3. **Secure your Hevy API key** - rotate regularly
+2. **Use environment variables** - API key is loaded from `$env.HEVY_API_KEY`
+3. **Rotate API keys regularly** - especially after any security incidents
 4. **Enable HTTPS** in production environments
 5. **Limit webhook access** - use authentication or IP whitelisting
+6. **Monitor n8n logs** - check for unauthorized access attempts
+
+> **Note**: The `n8n-data/` directory is automatically excluded from the repository as it may contain sensitive workflow execution data and credentials.
 
 ## 🐛 Troubleshooting
 
@@ -230,9 +250,17 @@ function parseExerciseBlock(block) {
 
 ### Hevy API Errors
 
-- Verify API key is correct
+- Verify API key is correct in `.env` file
 - Check Hevy API status and rate limits
 - Review API response in n8n execution logs
+- Ensure `HEVY_API_KEY` environment variable is properly loaded
+
+### Workflow Not Executing
+
+- Check that workflow is active in n8n UI
+- Verify webhook URL path matches your request
+- Check n8n logs: `docker-compose logs n8n`
+- Ensure environment variables are loaded: `docker exec container_name env | grep HEVY`
 
 ### Permission Errors
 
