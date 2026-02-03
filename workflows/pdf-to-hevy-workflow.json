@@ -101,15 +101,37 @@
     },
     {
       "parameters": {
+        "jsCode": "const item = $input.first();\nconst hevyResponse = item.json;\n\n// Check if Hevy API returned success\nif (hevyResponse && hevyResponse.routine && hevyResponse.routine.id) {\n  return [{\n    json: {\n      success: true,\n      message: 'Rutina creada exitosamente en Hevy',\n      routine_id: hevyResponse.routine.id,\n      routine_title: hevyResponse.routine.title,\n      exercises_count: hevyResponse.routine.exercises?.length || 0\n    }\n  }];\n} else if (hevyResponse && hevyResponse.error) {\n  return [{\n    json: {\n      success: false,\n      message: 'Error de Hevy API',\n      error: hevyResponse.error,\n      details: hevyResponse.message || 'Sin detalles adicionales'\n    }\n  }];\n} else {\n  return [{\n    json: {\n      success: false,\n      message: 'Respuesta inesperada de Hevy API',\n      raw_response: hevyResponse\n    }\n  }];\n}"
+      },
+      "id": "format-response",
+      "name": "Format Response",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [850, 300]
+    },
+    {
+      "parameters": {
         "respondWith": "json",
         "responseBody": "={{ $json }}",
-        "options": { "responseCode": 200 }
+        "options": { "responseCode": "={{ $json.success ? 200 : 400 }}" }
       },
       "id": "response",
       "name": "Response",
       "type": "n8n-nodes-base.respondToWebhook",
       "typeVersion": 1.1,
-      "position": [850, 300]
+      "position": [1050, 300]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ { success: false, message: 'Error procesando el PDF', error: $json.message || 'Error desconocido' } }}",
+        "options": { "responseCode": 500 }
+      },
+      "id": "error-response",
+      "name": "Error Response",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [850, 500]
     }
   ],
   "connections": {
@@ -123,7 +145,8 @@
     "Extract PDF Text": { "main": [[{ "node": "Prepare Payload", "type": "main", "index": 0 }]] },
     "Pass Mock Text": { "main": [[{ "node": "Prepare Payload", "type": "main", "index": 0 }]] },
     "Prepare Payload": { "main": [[{ "node": "Hevy API", "type": "main", "index": 0 }]] },
-    "Hevy API": { "main": [[{ "node": "Response", "type": "main", "index": 0 }]] }
+    "Hevy API": { "main": [[{ "node": "Format Response", "type": "main", "index": 0 }]] },
+    "Format Response": { "main": [[{ "node": "Response", "type": "main", "index": 0 }]] }
   },
   "settings": { "executionOrder": "v1" },
   "staticData": null,
