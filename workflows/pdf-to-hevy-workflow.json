@@ -1,6 +1,6 @@
 {
   "active": true,
-  "name": "PDF to Hevy Workout Converter",
+  "name": "PDF to Hevy Workout Converter (AI)",
   "nodes": [
     {
       "parameters": {
@@ -21,27 +21,6 @@
     },
     {
       "parameters": {
-        "operation": "text",
-        "options": {}
-      },
-      "id": "extract-pdf",
-      "name": "Extract PDF Text",
-      "type": "n8n-nodes-base.extractFromFile",
-      "typeVersion": 1,
-      "position": [450, 300]
-    },
-    {
-      "parameters": {
-        "jsCode": "const item = $input.first();\n\n// Check if we have extracted PDF text or mockText fallback\nlet text = '';\nif (item.json.data) {\n  // From Extract from File node\n  text = item.json.data;\n} else if (item.json.body?.mockText || item.json.mockText) {\n  // Fallback to mockText for testing\n  text = item.json.body?.mockText || item.json.mockText;\n} else {\n  throw new Error('No PDF text or mockText provided. Received: ' + JSON.stringify(item.json));\n}\n\nconst lines = text.split('\\n').filter(l => l.trim());\nlet workoutName = 'Imported Workout';\nconst exercises = [];\n\nfor (const line of lines) {\n  // Try to parse exercise line: \"1. Bench Press - 4x10 @ 60kg\" or \"Bench Press - 3x12 @ 40kg\"\n  const exerciseMatch = line.match(/^\\d*\\.?\\s*(.+?)\\s*-\\s*(\\d+)x(\\d+)\\s*@\\s*([\\d.]+)\\s*kg/i);\n  if (exerciseMatch) {\n    const [, name, sets, reps, weight] = exerciseMatch;\n    const setsArray = [];\n    for (let i = 0; i < parseInt(sets); i++) {\n      setsArray.push({\n        type: 'normal',\n        weight_kg: parseFloat(weight),\n        reps: parseInt(reps),\n        distance_meters: null,\n        duration_seconds: null\n      });\n    }\n    exercises.push({\n      exercise_template_id: 'D04AC939',\n      superset_id: null,\n      rest_seconds: 90,\n      notes: name.trim(),\n      sets: setsArray\n    });\n  } else if (!line.match(/^\\d+\\./) && !exercises.length) {\n    // First non-exercise line is the workout name\n    workoutName = line.trim();\n  }\n}\n\n// If no exercises found, create a default one\nif (exercises.length === 0) {\n  exercises.push({\n    exercise_template_id: 'D04AC939',\n    superset_id: null,\n    rest_seconds: 90,\n    notes: 'Default exercise',\n    sets: [{ type: 'normal', weight_kg: 20, reps: 10, distance_meters: null, duration_seconds: null }]\n  });\n}\n\nreturn [{\n  json: {\n    routine: {\n      title: workoutName,\n      folder_id: null,\n      exercises: exercises\n    }\n  }\n}];"
-      },
-      "id": "prepare-payload",
-      "name": "Prepare Payload",
-      "type": "n8n-nodes-base.code",
-      "typeVersion": 2,
-      "position": [650, 300]
-    },
-    {
-      "parameters": {
         "conditions": {
           "options": { "caseSensitive": true, "typeValidation": "loose" },
           "combinator": "and",
@@ -59,17 +38,80 @@
       "name": "Has PDF?",
       "type": "n8n-nodes-base.if",
       "typeVersion": 2,
-      "position": [350, 300]
+      "position": [400, 300]
     },
     {
       "parameters": {
-        "jsCode": "// Pass through mockText for testing without PDF\nconst item = $input.first();\nreturn [{ json: item.json }];"
+        "operation": "text",
+        "options": {}
+      },
+      "id": "extract-pdf",
+      "name": "Extract PDF Text",
+      "type": "n8n-nodes-base.extractFromFile",
+      "typeVersion": 1,
+      "position": [550, 250]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Pass through mockText for testing without PDF\nconst item = $input.first();\nreturn [{ json: { text: item.json.body?.mockText || item.json.mockText || '' } }];"
       },
       "id": "pass-mock",
       "name": "Pass Mock Text",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [450, 450]
+      "position": [550, 400]
+    },
+    {
+      "parameters": {
+        "jsCode": "const item = $input.first();\nlet text = item.json.data || item.json.text || '';\n\nif (!text) {\n  throw new Error('No se pudo extraer texto del PDF');\n}\n\n// Limpiar el texto - remover caracteres no imprimibles y limitar longitud\ntext = text.replace(/[^\\x20-\\x7E\\xA0-\\xFF\\n\\r\\t]/g, ' ');\ntext = text.replace(/\\s+/g, ' ').trim();\n\n// Limitar a 50000 caracteres (~12500 tokens) para estar seguro\nif (text.length > 50000) {\n  text = text.substring(0, 50000) + '\\n\\n[Texto truncado...]';\n}\n\n// Log para debug\nconsole.log('Longitud del texto extraído:', text.length);\n\nconst prompt = `Eres un asistente experto en fitness. Analiza el siguiente texto de un entrenamiento y extrae los ejercicios en formato JSON.\n\nDebe devolver SOLO un JSON válido con esta estructura exacta (sin explicaciones, sin markdown, solo el JSON):\n{\n  \"workout_title\": \"nombre del entrenamiento\",\n  \"exercises\": [\n    {\n      \"name\": \"nombre del ejercicio en inglés\",\n      \"name_es\": \"nombre del ejercicio en español\",\n      \"sets\": número de series,\n      \"reps\": número de repeticiones (si es variable, usar el primer valor),\n      \"rest_seconds\": descanso en segundos entre series,\n      \"notes\": \"notas importantes sobre técnica o tempo\"\n    }\n  ]\n}\n\nReglas:\n- Si hay superseries, agregar cada ejercicio por separado\n- Si las reps varían (12, 10, 8), usar el promedio o el primer valor\n- Convertir tiempos de descanso a segundos (1 minuto = 60, 1 minuto y medio = 90)\n- Ignorar los links de YouTube\n- El nombre en inglés debe ser el nombre común del ejercicio en gimnasios\n\nTexto del entrenamiento:\n\n${text}`;\n\nreturn [{\n  json: {\n    claudeRequest: {\n      model: 'claude-sonnet-4-20250514',\n      max_tokens: 4096,\n      messages: [\n        {\n          role: 'user',\n          content: prompt\n        }\n      ]\n    },\n    _debug: {\n      textLength: text.length,\n      textPreview: text.substring(0, 500)\n    }\n  }\n}];"
+      },
+      "id": "prepare-text",
+      "name": "Prepare Claude Request",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [700, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.anthropic.com/v1/messages",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "x-api-key",
+              "value": "={{ $env.ANTHROPIC_API_KEY }}"
+            },
+            {
+              "name": "anthropic-version",
+              "value": "2023-06-01"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json.claudeRequest) }}",
+        "options": {}
+      },
+      "id": "claude-api",
+      "name": "Claude AI - Parse Workout",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [900, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "const item = $input.first();\nconst claudeResponse = item.json;\n\n// Extract the text content from Claude's response\nlet jsonText = '';\nif (claudeResponse.content && claudeResponse.content[0] && claudeResponse.content[0].text) {\n  jsonText = claudeResponse.content[0].text;\n} else {\n  throw new Error('Respuesta inesperada de Claude: ' + JSON.stringify(claudeResponse));\n}\n\n// Parse the JSON from Claude's response\nlet workoutData;\ntry {\n  const jsonMatch = jsonText.match(/```json?\\s*([\\s\\S]*?)```/) || jsonText.match(/\\{[\\s\\S]*\\}/);\n  const cleanJson = jsonMatch ? (jsonMatch[1] || jsonMatch[0]) : jsonText;\n  workoutData = JSON.parse(cleanJson.trim());\n} catch (e) {\n  throw new Error('Error parseando JSON de Claude: ' + e.message + '\\n\\nRespuesta: ' + jsonText);\n}\n\n// Map exercise names to REAL Hevy template IDs (verified from API)\n// ONLY exercises that are 100% verified will be included\nconst exerciseMapping = {\n  // Chest\n  'bench press': '79D0BB3A',\n  'barbell bench press': '79D0BB3A',\n  'dumbbell bench press': '3601968B',\n  'incline bench press': '50DFDFAB',\n  'incline bench press barbell': '50DFDFAB',\n  'incline dumbbell bench press': '07B38369',\n  'incline dumbbell press': '07B38369',\n  'decline bench press': 'DA0F0470',\n  'close grip bench press': '35B51B87',\n  'dumbbell fly': '12017185',\n  'chest fly': '12017185',\n  'dumbbell chest fly': '12017185',\n  'cable fly': '651F844C',\n  'cable crossover': '651F844C',\n  'cable fly crossover': '651F844C',\n  'low cable fly': '293483AD',\n  'push up': '392887AA',\n  'pushup': '392887AA',\n  'push-up': '392887AA',\n  'close grip push up': '947DAC23',\n  \n  // Shoulders\n  'overhead press': '7B8D84E8',\n  'barbell overhead press': '7B8D84E8',\n  'military press': '7B8D84E8',\n  'standing military press': '073032BB',\n  'shoulder press': '878CD1D0',\n  'dumbbell shoulder press': '878CD1D0',\n  'dumbbell overhead press': '6AC96645',\n  'seated overhead press': '91AF29E0',\n  'front raise': 'DBF9273A',\n  'plate front raise': 'DBF9273A',\n  'lateral raise': '422B08F1',\n  'dumbbell lateral raise': '422B08F1',\n  'side lateral raise': '422B08F1',\n  'rear delt fly': 'E5988A0A',\n  'rear delt reverse fly': 'E5988A0A',\n  \n  // Back\n  'lat pulldown': '6A6C31A5',\n  'cable lat pulldown': '6A6C31A5',\n  'pull up': '1B2B1E7C',\n  'pullup': '1B2B1E7C',\n  'chin up': '1B2B1E7C',\n  'barbell row': '55E6546F',\n  'bent over row': '55E6546F',\n  'bent over barbell row': '55E6546F',\n  'dumbbell row': '23E92538',\n  'bent over dumbbell row': '23E92538',\n  'one arm dumbbell row': '23E92538',\n  'cable row': '0393F233',\n  'seated cable row': '0393F233',\n  'seated row': '1DF4A847',\n  't bar row': '08A2974E',\n  'pendlay row': '018ADC12',\n  'romanian deadlift': '2B4B7310',\n  'barbell romanian deadlift': '2B4B7310',\n  'dumbbell romanian deadlift': '72CFFAD5',\n  \n  // Arms - Biceps\n  'bicep curl': '37FCC2BB',\n  'dumbbell curl': '37FCC2BB',\n  'dumbbell bicep curl': '37FCC2BB',\n  'barbell curl': 'A5AC5449',\n  'barbell bicep curl': 'A5AC5449',\n  'hammer curl': '63770673',\n  'concentration curl': '1E4CB3FA',\n  'preacher curl': 'FAB6EB2F',\n  'dumbbell preacher curl': 'FAB6EB2F',\n  'barbell preacher curl': '4F942934',\n  \n  // Arms - Triceps\n  'tricep extension': 'B5EFBF9C',\n  'overhead tricep extension': 'B5EFBF9C',\n  'cable tricep extension': 'B5EFBF9C',\n  'tricep pushdown': '552AB030',\n  'cable tricep pushdown': '552AB030',\n  'skullcrusher': '875F585F',\n  \n  // Core\n  'plank': 'C6C9B8A0',\n  'front plank': 'C6C9B8A0',\n  'side plank': 'E3EDA509',\n  'crunch': 'DCF3B31B',\n  'crunches': 'DCF3B31B',\n  'ab crunch': 'DCF3B31B',\n  'reverse crunch': '7952B5CD',\n  'mountain climber': 'F49E31D6',\n  'mountain climbers': 'F49E31D6',\n  'lying leg raise': '09C9F635',\n  'leg raise': '09C9F635',\n  'oblique crunch': 'DBE341AA',\n  'russian twist': 'BB83BDDE',\n  'sit up': '022DF610',\n  \n  // Legs\n  'squat': 'D04AC939',\n  'barbell squat': 'D04AC939',\n  'back squat': 'D04AC939',\n  'bodyweight squat': '9694DA61',\n  'front squat': '5046D0A9',\n  'goblet squat': '3D0C7C75',\n  'dumbbell goblet squat': '3D0C7C75',\n  'hack squat': '1E42FD5F',\n  'leg press': 'C7973E0E',\n  'machine leg press': 'C7973E0E',\n  'leg extension': '75A4F6C4',\n  'machine leg extension': '75A4F6C4',\n  'leg curl': 'B8127AD1',\n  'lying leg curl': 'B8127AD1',\n  'seated leg curl': '11A123F3',\n  'machine leg curl': 'B8127AD1',\n  'lunge': '5E1A7777',\n  'bodyweight lunge': '5E1A7777',\n  'dumbbell lunge': 'B537D09F',\n  'barbell lunge': '6E6EE645',\n  'reverse lunge': 'C284D923',\n  'dumbbell reverse lunge': 'FFDA283B',\n  'bulgarian split squat': 'B5D3A742',\n  'split squat': '20C1A3CB',\n  'deadlift': 'C6272009',\n  'barbell deadlift': 'C6272009',\n  'conventional deadlift': 'C6272009',\n  'sumo deadlift': 'D20D7BBE',\n  'hip thrust': '6B0C2556',\n  'barbell hip thrust': '6B0C2556',\n  'glute bridge': 'CBC0D834',\n  'calf raise': '06745E58',\n  'standing calf raise': '06745E58'\n};\n\n// Function to find exercise ID - returns null if not found (NO DEFAULT)\nfunction getExerciseId(name) {\n  const normalized = name.toLowerCase().trim();\n  \n  // First try exact match\n  if (exerciseMapping[normalized]) {\n    return { id: exerciseMapping[normalized], matched: normalized };\n  }\n  \n  // Then try partial matches (exercise name contains mapping key or vice versa)\n  for (const [key, id] of Object.entries(exerciseMapping)) {\n    if (normalized.includes(key) || key.includes(normalized)) {\n      return { id: id, matched: key };\n    }\n  }\n  \n  // NO DEFAULT - return null if no match found\n  return null;\n}\n\n// Build the Hevy routine payload - ONLY include mapped exercises\nconst mappedExercises = [];\nconst skippedExercises = [];\n\nworkoutData.exercises.forEach((ex, index) => {\n  const matchResult = getExerciseId(ex.name);\n  \n  if (matchResult === null) {\n    // Exercise not mapped - skip it\n    skippedExercises.push({\n      original_name: ex.name,\n      name_es: ex.name_es || '',\n      reason: 'No matching Hevy exercise template found'\n    });\n    return; // Skip this exercise\n  }\n  \n  const setsArray = [];\n  const numSets = ex.sets || 3;\n  const reps = ex.reps || 10;\n  \n  for (let i = 0; i < numSets; i++) {\n    setsArray.push({\n      type: 'normal',\n      weight_kg: null,\n      reps: reps,\n      distance_meters: null,\n      duration_seconds: null,\n      custom_metric: null\n    });\n  }\n  \n  mappedExercises.push({\n    exercise_template_id: matchResult.id,\n    superset_id: null,\n    rest_seconds: ex.rest_seconds || 90,\n    notes: ex.notes || ex.name_es || '',\n    sets: setsArray\n  });\n});\n\n// If no exercises could be mapped, throw error\nif (mappedExercises.length === 0) {\n  throw new Error('No se pudo mapear ningún ejercicio. Ejercicios no reconocidos: ' + \n    skippedExercises.map(e => e.original_name).join(', '));\n}\n\nreturn [{\n  json: {\n    routine: {\n      title: workoutData.workout_title || 'Imported Workout',\n      folder_id: null,\n      notes: 'Importado desde PDF usando AI. ' + \n        (skippedExercises.length > 0 ? \n          'Ejercicios omitidos por no estar mapeados: ' + skippedExercises.map(e => e.original_name).join(', ') : \n          'Todos los ejercicios fueron mapeados correctamente.'),\n      exercises: mappedExercises\n    },\n    _debug: {\n      claude_parsed: workoutData,\n      total_exercises_found: workoutData.exercises.length,\n      exercises_mapped: mappedExercises.length,\n      exercises_skipped: skippedExercises.length,\n      skipped_details: skippedExercises\n    }\n  }\n}];"
+      },
+      "id": "transform-to-hevy",
+      "name": "Transform to Hevy Format",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1100, 300]
     },
     {
       "parameters": {
@@ -90,24 +132,24 @@
         },
         "sendBody": true,
         "specifyBody": "json",
-        "jsonBody": "={{ JSON.stringify($json) }}",
+        "jsonBody": "={{ JSON.stringify({ routine: $json.routine }) }}",
         "options": {}
       },
       "id": "hevy-api",
-      "name": "Hevy API",
+      "name": "Hevy API - Create Routine",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
-      "position": [650, 300]
+      "position": [1300, 300]
     },
     {
       "parameters": {
-        "jsCode": "const item = $input.first();\nconst hevyResponse = item.json;\n\n// Check if Hevy API returned success\nif (hevyResponse && hevyResponse.routine && hevyResponse.routine.id) {\n  return [{\n    json: {\n      success: true,\n      message: 'Rutina creada exitosamente en Hevy',\n      routine_id: hevyResponse.routine.id,\n      routine_title: hevyResponse.routine.title,\n      exercises_count: hevyResponse.routine.exercises?.length || 0\n    }\n  }];\n} else if (hevyResponse && hevyResponse.error) {\n  return [{\n    json: {\n      success: false,\n      message: 'Error de Hevy API',\n      error: hevyResponse.error,\n      details: hevyResponse.message || 'Sin detalles adicionales'\n    }\n  }];\n} else {\n  return [{\n    json: {\n      success: false,\n      message: 'Respuesta inesperada de Hevy API',\n      raw_response: hevyResponse\n    }\n  }];\n}"
+        "jsCode": "const item = $input.first();\nconst hevyResponse = item.json;\n\n// Handle both array and object response from Hevy API\nconst routine = Array.isArray(hevyResponse.routine) ? hevyResponse.routine[0] : hevyResponse.routine;\n\nif (routine && routine.id) {\n  // Get debug info from previous node if available\n  const prevData = $('Transform to Hevy Format').first()?.json?._debug || {};\n  \n  return [{\n    json: {\n      success: true,\n      message: 'Rutina creada exitosamente en Hevy',\n      routine_id: routine.id,\n      routine_title: routine.title,\n      exercises_count: routine.exercises?.length || 0,\n      mapping_info: {\n        total_found_by_ai: prevData.total_exercises_found || 'N/A',\n        successfully_mapped: prevData.exercises_mapped || 'N/A',\n        skipped: prevData.exercises_skipped || 0,\n        skipped_exercises: prevData.skipped_details || []\n      }\n    }\n  }];\n} else if (hevyResponse && hevyResponse.error) {\n  return [{\n    json: {\n      success: false,\n      message: 'Error de Hevy API',\n      error: hevyResponse.error,\n      details: hevyResponse.message || JSON.stringify(hevyResponse)\n    }\n  }];\n} else {\n  return [{\n    json: {\n      success: false,\n      message: 'Respuesta inesperada de Hevy API',\n      raw_response: hevyResponse\n    }\n  }];\n}"
       },
       "id": "format-response",
       "name": "Format Response",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [850, 300]
+      "position": [1500, 300]
     },
     {
       "parameters": {
@@ -119,34 +161,40 @@
       "name": "Response",
       "type": "n8n-nodes-base.respondToWebhook",
       "typeVersion": 1.1,
-      "position": [1050, 300]
-    },
-    {
-      "parameters": {
-        "respondWith": "json",
-        "responseBody": "={{ { success: false, message: 'Error procesando el PDF', error: $json.message || 'Error desconocido' } }}",
-        "options": { "responseCode": 500 }
-      },
-      "id": "error-response",
-      "name": "Error Response",
-      "type": "n8n-nodes-base.respondToWebhook",
-      "typeVersion": 1.1,
-      "position": [850, 500]
+      "position": [1700, 300]
     }
   ],
   "connections": {
-    "Webhook - Upload PDF": { "main": [[{ "node": "Has PDF?", "type": "main", "index": 0 }]] },
+    "Webhook - Upload PDF": { 
+      "main": [[{ "node": "Has PDF?", "type": "main", "index": 0 }]] 
+    },
     "Has PDF?": { 
       "main": [
         [{ "node": "Extract PDF Text", "type": "main", "index": 0 }],
         [{ "node": "Pass Mock Text", "type": "main", "index": 0 }]
       ] 
     },
-    "Extract PDF Text": { "main": [[{ "node": "Prepare Payload", "type": "main", "index": 0 }]] },
-    "Pass Mock Text": { "main": [[{ "node": "Prepare Payload", "type": "main", "index": 0 }]] },
-    "Prepare Payload": { "main": [[{ "node": "Hevy API", "type": "main", "index": 0 }]] },
-    "Hevy API": { "main": [[{ "node": "Format Response", "type": "main", "index": 0 }]] },
-    "Format Response": { "main": [[{ "node": "Response", "type": "main", "index": 0 }]] }
+    "Extract PDF Text": { 
+      "main": [[{ "node": "Prepare Claude Request", "type": "main", "index": 0 }]] 
+    },
+    "Pass Mock Text": { 
+      "main": [[{ "node": "Prepare Claude Request", "type": "main", "index": 0 }]] 
+    },
+    "Prepare Claude Request": { 
+      "main": [[{ "node": "Claude AI - Parse Workout", "type": "main", "index": 0 }]] 
+    },
+    "Claude AI - Parse Workout": { 
+      "main": [[{ "node": "Transform to Hevy Format", "type": "main", "index": 0 }]] 
+    },
+    "Transform to Hevy Format": { 
+      "main": [[{ "node": "Hevy API - Create Routine", "type": "main", "index": 0 }]] 
+    },
+    "Hevy API - Create Routine": { 
+      "main": [[{ "node": "Format Response", "type": "main", "index": 0 }]] 
+    },
+    "Format Response": { 
+      "main": [[{ "node": "Response", "type": "main", "index": 0 }]] 
+    }
   },
   "settings": { "executionOrder": "v1" },
   "staticData": null,
